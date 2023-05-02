@@ -1,0 +1,40 @@
+# Python files
+*.pyc
+__pycache__/
+
+# Virtual environment
+venv/
+env/
+
+# Development files
+*.log
+*.sqlite3
+*.pyc
+*.pyo
+
+# Compiled files
+*.o
+*.so
+*.dll
+*.exe
+*.pyd
+
+# Other build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+tags
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Project generated files
+gallery.json
