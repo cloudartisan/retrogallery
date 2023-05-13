@@ -1,5 +1,3 @@
-import re
-
 import scrapy
 from scrapy.crawler import CrawlerProcess
 
@@ -24,6 +22,8 @@ class NostalgiaNerdGallerySpider(scrapy.Spider):
         for preview_title in response.css("h3.preview-title"):
             gallery_title = preview_title.css("a::attr(title)").get()
             gallery_url = preview_title.css("a::attr(href)").get()
+            if not gallery_url:
+                continue
             yield response.follow(gallery_url, self.parse_gallery, meta={
                 'gallery_title': gallery_title,
                 'gallery_url': gallery_url,
@@ -45,13 +45,16 @@ class NostalgiaNerdGallerySpider(scrapy.Spider):
             image = ImageItem()
             image['gallery_title'] = gallery_title
             image['gallery_url'] = gallery_url
-            # Defaults to the gallery title if there is no alt text
-            image['image_title'] = img.css("::attr(alt)").get(default=gallery_title) 
+            # Defaults to the gallery title if there is no alt text or the alt
+            # text is simply a default photo name (e.g., DSC_1234.jpg)
+            image['image_title'] = img.css("::attr(alt)").get()
+            if not image['image_title'] or image['image_title'].startswith('DSC_'):
+                image['image_title'] = gallery_title
             image['image_urls'] = img.css("::attr(src)").getall()
-            img_srcset = img.css("::attr(srcset)").get()
-            if img_srcset:
-                urls = re.findall(r'(https?://[^\s]+)', img_srcset)
-                image['image_urls'].extend(urls)
+            # TODO srcset contains the same image in different sizes. Do we
+            # want the different sizes, too? How do we store them? How do we
+            # store their sizes? How do we differentiate different sizes of
+            # the same image to avoid duplication?
             yield image
 
 

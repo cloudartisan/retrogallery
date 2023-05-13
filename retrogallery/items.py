@@ -8,6 +8,7 @@ import scrapy
 
 
 class ImageItem(scrapy.Item):
+    spider = scrapy.Field() # the name of the spider that scraped the image
     gallery_title = scrapy.Field()
     gallery_url = scrapy.Field()
     image_title = scrapy.Field()

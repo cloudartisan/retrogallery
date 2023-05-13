@@ -9,7 +9,7 @@ from contextlib import suppress
 import scrapy
 from scrapy.exceptions import DropItem
 from scrapy.pipelines.images import ImagesPipeline
-from itemadapter import ItemAdapter
+from itemadapter.adapter import ItemAdapter
 
 
 class RetrogalleryPipeline(ImagesPipeline):
@@ -30,6 +30,16 @@ class RetrogalleryPipeline(ImagesPipeline):
             request.meta['image_title'] = item['image_title']
             yield request
 
+    def process_item(self, item, spider):
+        """
+        process_item() is called for every item pipeline component. It
+        accepts the item and spider and returns either the processed item,
+        or raises a DropItem exception to discard the item.
+        """
+        adapter = ItemAdapter(item)
+        adapter['spider'] = spider.name
+        return super().process_item(item, spider)
+
     def file_path(self, request, response=None, info=None, *, item=None):
         """
         file_path() is called for each image that is downloaded. It
@@ -39,6 +49,7 @@ class RetrogalleryPipeline(ImagesPipeline):
         as the filename. We override this method to construct a path
         based on the gallery title, image title, and image URL hash.
         """
+        spider = self.spiderinfo.spider.name
         gallery_title = request.meta['gallery_title']
         if not gallery_title:
             raise DropItem("Missing gallery title")
@@ -46,7 +57,7 @@ class RetrogalleryPipeline(ImagesPipeline):
         if not image_title:
             raise DropItem("Missing image title")
         image_guid = hashlib.sha1(request.url.encode()).hexdigest()
-        return f"{gallery_title}/{image_title}/{image_guid}.jpg"
+        return f"retrogallery/{spider}/{gallery_title}/{image_title}/{image_guid}.jpg"
 
     def item_completed(self, results, item, info):
         """
