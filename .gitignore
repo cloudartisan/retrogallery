@@ -38,3 +38,7 @@ Thumbs.db
 
 # Project generated files
 gallery.json
+
+.coverage
+htmlcov/
+*,cover

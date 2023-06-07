@@ -1,6 +1,9 @@
 botocore==1.29.124
+colorlog==6.7.0
+coverage==7.2.5
 itemadapter==0.8.0
 mwapi==0.6.1
+nose2==0.13.0
 parsel==1.7.0
 pillow==9.5.0
 scrapy==2.8.0
