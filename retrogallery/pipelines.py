@@ -4,15 +4,32 @@
 # See: https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 
 import hashlib
+import logging
+import os
 from contextlib import suppress
+from urllib.parse import urlparse
 
 import scrapy
-from scrapy.exceptions import DropItem
+from scrapy.exceptions import DropItem, NotConfigured
 from scrapy.pipelines.images import ImagesPipeline
 from itemadapter.adapter import ItemAdapter
 
+from retrogallery import utils
 
-class RetrogalleryPipeline(ImagesPipeline):
+
+class RetroGalleryLocalPipeline(ImagesPipeline):
+    def __init__(self, store_uri, download_func=None, settings=None):
+        self.logger = logging.getLogger(self.__class__.__name__)
+        # If we can find a RETROGALLERYLOCALPIPELINE_IMAGES_STORE setting,
+        # use that, otherwise use the default store_uri
+        if settings:
+            store_uri = settings.get('RETROGALLERYLOCALPIPELINE_IMAGES_STORE', store_uri)
+        super().__init__(
+            store_uri=store_uri,
+            download_func=download_func,
+            settings=settings
+        )
+
     def get_media_requests(self, item, info):
         """
         get_media_requests() is called for each item that needs to be
@@ -22,12 +39,11 @@ class RetrogalleryPipeline(ImagesPipeline):
         image title metadata. Yields a Request, including metadata, for
         every URL in self.image_urls.
         """
-        print("ITEM: ", item)
         images_urls = ItemAdapter(item).get(self.images_urls_field, [])
         for url in images_urls:
             request = scrapy.Request(url)
-            request.meta['gallery_title'] = item['gallery_title']
-            request.meta['image_title'] = item['image_title']
+            request.meta['gallery_title'] = item.get('gallery_title')
+            request.meta['image_title'] = item.get('image_title')
             yield request
 
     def process_item(self, item, spider):
@@ -50,14 +66,18 @@ class RetrogalleryPipeline(ImagesPipeline):
         based on the gallery title, image title, and image URL hash.
         """
         spider = self.spiderinfo.spider.name
-        gallery_title = request.meta['gallery_title']
+        gallery_title = request.meta.get('gallery_title') or item.get('gallery_title')
         if not gallery_title:
             raise DropItem("Missing gallery title")
-        image_title = request.meta['image_title']
+        image_title = request.meta.get('image_title') or item.get('image_title')
         if not image_title:
             raise DropItem("Missing image title")
+        # deepcode ignore InsecureHash: <not used in a security context>
         image_guid = hashlib.sha1(request.url.encode()).hexdigest()
-        return f"retrogallery/{spider}/{gallery_title}/{image_title}/{image_guid}.jpg"
+        image_ext = utils.extract_image_extension(request.url)
+        file_path = f"{spider}/{gallery_title}/{image_title}/{image_guid}{image_ext}"
+        self.logger.debug(f"Saving {file_path}")
+        return file_path
 
     def item_completed(self, results, item, info):
         """
@@ -121,3 +141,38 @@ class RetrogalleryPipeline(ImagesPipeline):
         with suppress(KeyError):
             ItemAdapter(item)[self.images_result_field] = downloads # type: ignore
         return item
+    
+
+class RetroGalleryS3Pipeline(ImagesPipeline):
+    """
+    Uploads images to S3.
+    """
+    def __init__(self, store_uri, download_func=None, settings=None):
+        self.logger = logging.getLogger(self.__class__.__name__)
+        # If we do not have AWS credentials, raise NotConfigured
+        if (not settings or (
+                not settings.get('AWS_ACCESS_KEY_ID') and
+                not settings.get('AWS_SECRET_ACCESS_KEY')
+            ) and not settings.get('AWS_SESSION_TOKEN')):
+            raise NotConfigured("No AWS credentials found")
+        # If we can find a RETROGALLERYS3PIPELINE_IMAGES_STORE setting,
+        # use that, otherwise use the default store_uri
+        if settings:
+            store_uri = settings.get('RETROGALLERYS3PIPELINE_IMAGES_STORE', store_uri)
+        super().__init__(
+            store_uri=store_uri,
+            download_func=download_func,
+            settings=settings
+        )
+"""
+    def process_item(self, item, spider):
+        adapter = ItemAdapter(item)
+        gallery_title = adapter['gallery_title']
+        image_title = adapter['image_title']
+        images = adapter.get('images', [])
+        for image in images:
+            image_path = image['path']
+            s3_path = f"retrogallery/{spider.name}/{gallery_title}/{image_title}/{image_path}"
+            self.s3_client.upload_file(image_path, self.bucket_name, s3_path)
+        return item
+        """

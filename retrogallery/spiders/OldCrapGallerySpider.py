@@ -1,9 +1,14 @@
+import logging
 from urllib.parse import urlparse
 
 import scrapy
 from scrapy.crawler import CrawlerProcess
 
+from retrogallery import utils
 from retrogallery.items import ImageItem
+
+
+logger = logging.getLogger(__name__)
 
 
 class OldCrapGallerySpider(scrapy.Spider):
@@ -34,17 +39,16 @@ class OldCrapGallerySpider(scrapy.Spider):
         </div>
         """
         for div in response.css('div.iksm-term--is-post'):
-            gallery_url = div.css('a.iksm-term__link::attr(href)').get().strip()
+            gallery_url = div.css('a.iksm-term__link::attr(href)').get('').strip()
             # NOTE this is an interim title, we'll try to get a better one
             # from the gallery page.
-            gallery_title = div.css('span.iksm-term__text::text').get().strip()
+            gallery_title = div.css('span.iksm-term__text::text').get('').strip()
             if not gallery_url:
                 continue
             if not gallery_title:
-                # If we have a URL but not a title, we can try to get the
-                # title from the URL using the last path component.
-                p = urlparse(gallery_url)
-                gallery_title = p.path.rsplit('/', 1)[-1]
+                # If we have a URL but no title, we need to construct a
+                # title from the URL
+                gallery_title = utils.construct_gallery_title_from_url(gallery_url)
             yield response.follow(gallery_url, self.parse_gallery, meta={
                 'gallery_title': gallery_title,
                 'gallery_url': gallery_url,
@@ -76,9 +80,16 @@ class OldCrapGallerySpider(scrapy.Spider):
             image = ImageItem()
             image['gallery_title'] = gallery_title
             image['gallery_url'] = gallery_url
+            # TODO srcset contains the same image in different sizes. Do
+            # we want the different sizes, too? How do we store them? How
+            # do we store their sizes? How do we differentiate different
+            # sizes of the same image to avoid duplication?
+            image['image_urls'] = carousel.css("noscript img::attr(data-orig-file)").getall()
+
             # Get the immediately preceding heading element, if any.
             heading = carousel.xpath('preceding-sibling::*[self::h1 or self::h2 or self::h3][1]')
-            heading_text = heading.xpath('string()').get().strip() if heading else ''
+            heading_text = heading.xpath('string()').get('').strip() if heading else ''
+
             # Get the preceding parent heading element, if any.
             if heading and heading.xpath('self::h3'):
                 parent_heading = carousel.xpath('preceding-sibling::*[self::h2][1]')
@@ -86,13 +97,14 @@ class OldCrapGallerySpider(scrapy.Spider):
                 parent_heading = carousel.xpath('preceding-sibling::*[self::h1][1]')
             else:
                 parent_heading = None
-            parent_heading_text = parent_heading.xpath('string()').get().strip() if parent_heading else ''
+            parent_heading_text = parent_heading.xpath('string()').get('').strip() if parent_heading else ''
+
             # Get the preceding grandparent heading element, if any.
             if parent_heading and parent_heading.xpath('self::h2'):
                 grandparent_heading = carousel.xpath('preceding-sibling::*[self::h1][1]')
             else:
                 grandparent_heading = None
-            grandparent_heading_text = grandparent_heading.xpath('string()').get().strip() if grandparent_heading else ''
+            grandparent_heading_text = grandparent_heading.xpath('string()').get('').strip() if grandparent_heading else ''
 
             # Use the immediately preceding heading/subheading elements as the
             # image title, since most of the images do not provide alt text
@@ -102,23 +114,10 @@ class OldCrapGallerySpider(scrapy.Spider):
                 heading_text,
             ]).strip()
 
-            image['image_urls'] = []
-            for figure in carousel.css('figure.tiled-gallery__item'):
-                # If we STILL don't have an image title, use alt text, if any
-                if not image['image_title']:
-                    image['image_title'] = figure.css("noscript img::attr(alt)").get().strip()
-                    # BUT, if there's no alt text or it's simply a filename
-                    # (e.g., DSC_1234.jpg), default to the gallery title
-                    if (
-                        not image['image_title']
-                        or image['image_title'].startswith('DSC_')
-                        or image['image_title'].startswith('IMG_')
-                        or image['image_title'].startswith('fullsizeoutput_')
-                    ):
-                        image['image_title'] = gallery_title
-                image['image_urls'].extend(figure.css("noscript img::attr(data-orig-file)").getall())
-                # TODO srcset contains the same image in different sizes. Do
-                # we want the different sizes, too? How do we store them? How
-                # do we store their sizes? How do we differentiate different
-                # sizes of the same image to avoid duplication?
+            # If we STILL don't have an image title, extract what we can from
+            # the img tag
+            if not image['image_title']:
+                img = carousel.css("noscript img")
+                image['image_title'] = utils.extract_image_title(img, default=gallery_title)
+
             yield image

@@ -1,7 +1,11 @@
+import logging
 import scrapy
 from scrapy.crawler import CrawlerProcess
 
 from retrogallery.items import ImageItem
+
+
+logger = logging.getLogger(__name__)
 
 
 class NostalgiaNerdGallerySpider(scrapy.Spider):
